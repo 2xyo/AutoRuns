@@ -68,6 +68,9 @@ Function Get-PSAutorun {
 
     .PARAMETER VerifyDigitalSignature
         Switch to report if a file is digitally signed with the built-in Get-AuthenticodeSignature cmdlet.
+
+    .PARAMETER ShowACL
+        Switch to enable and display ACL.
               
     .EXAMPLE
         Get-PSAutorun -BootExecute -AppinitDLLs
@@ -101,7 +104,8 @@ Function Get-PSAutorun {
         [Switch]$Winlogon,
         [Switch]$WMI,
         [Switch]$ShowFileHash,
-        [Switch]$VerifyDigitalSignature
+        [Switch]$VerifyDigitalSignature,
+        [Switch]$ShowACL
     )
 
 Begin {
@@ -456,12 +460,12 @@ Begin {
             [Switch]$Winlogon,
             [Switch]$WMI,
             [Switch]$ShowFileHash,
-            [Switch]$VerifyDigitalSignature
-
+            [Switch]$VerifyDigitalSignature,
+            [Switch]$ShowACL
         )
         Begin {
             ## Add 'All' if nothing else was supplied
-            $parametersToIgnore = ("ShowFileHash","VerifyDigitalSignature") +
+            $parametersToIgnore = ("ShowFileHash","VerifyDigitalSignature","ShowACL") +
                 [System.Management.Automation.PSCmdlet]::CommonParameters +
                 [System.Management.Automation.PSCmdlet]::OptionalCommonParameters
             if(($PSBoundParameters.Keys | ? { $_ -notin $parametersToIgnore }).Count -eq 0)
@@ -2174,7 +2178,33 @@ Begin {
         }
         End {}
     }
-
+    Function Add-PSAutoRunShowACL {
+        [CmdletBinding()]
+        Param(
+            [Parameter(Mandatory,ValueFromPipeLine)]
+            [system.object[]]$RawAutoRun,
+            [Switch]$ShowACL
+        )
+        Begin {}
+        Process {
+            $RawAutoRun | ForEach-Object {
+                If ($ShowACL) {
+                    if ($_.ImagePath) {
+                        If (Test-Path -Path $($_.ImagePath) -PathType Leaf) {
+                            $_ | Add-Member -MemberType NoteProperty -Name ACL -Value $(Get-ACL -Path $($_.ImagePath)).Sddl -Force -PassThru 
+                        } else {
+                            $_ | Add-Member -MemberType NoteProperty -Name ACL -Value $null -Force -PassThru
+                        }
+                    } else {
+                        $_ | Add-Member -MemberType NoteProperty -Name ACL -Value $null -Force -PassThru 
+                    }
+                } else {
+                    $_
+                }
+            }
+        }
+        End {}
+    }
     Function Add-PSAutoRunAuthentiCodeSignature {
         [CmdletBinding()]
         Param(
@@ -2243,11 +2273,17 @@ Process {
     } else {
         $GetSig = $false
     }
+    if ($PSBoundParameters.ContainsKey('ShowACL')) {
+        $GetACL = $true
+    } else {
+        $GetACL = $false
+    }
     Get-PSRawAutoRun @PSBoundParameters | 
     Get-PSPrettyAutorun | 
     Add-PSAutoRunExtendedInfo |
     Add-PSAutoRunHash -ShowFileHash:$GetHash |
-    Add-PSAutoRunAuthentiCodeSignature -VerifyDigitalSignature:$GetSig
+    Add-PSAutoRunAuthentiCodeSignature -VerifyDigitalSignature:$GetSig |
+    Add-PSAutoRunShowACL -ShowACL:$GetACL
 }
 End {}
 }
